@@ -12,6 +12,9 @@ import time
 
 load_dotenv()
 
+def path_from_code(relpath):
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relpath)
+
 def read_files(directory):
     context = ""
     for file in glob.glob(directory):
@@ -62,12 +65,10 @@ def insert_needle(needle, context, depth_percent, context_length, enc):
     new_context = enc.decode(tokens_new_context)
     return new_context
 
-def generate_context(needle, context_length, depth_percent):
-    # Load up tiktoken so we navigate tokens more easily
-    enc = tiktoken.encoding_for_model("gpt-4-1106-preview")
-
+def generate_context(needle, context_length, depth_percent, enc):
     # Get your Paul Graham files loaded into a string
-    context = read_files("paulgrahamessays/*.txt")
+    graham_glob = path_from_code("PaulGrahamEssays/*.txt")
+    context = read_files(graham_glob)
 
     # Truncate the Paul Graham essays to the context length you desire
     context = encode_and_trim(context, context_length, enc)
@@ -121,34 +122,45 @@ def result_exists(results, context_length, depth_percent, version):
         conditions_met.append(context_length_met and depth_percent_met and version_met)
     return any(conditions_met)
 
-if __name__ == "__main__":
-    needle = """
+
+def main(
+        needle = """
     The best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.
-    """
+    """,
+        question_to_ask = "What is the most fun thing to do in San Francisco?",
 
-    question_to_ask = "What is the most fun thing to do in San Francisco?"
-
-    # The code will check to see if a context_length, depth percent and version number have already been checked yet
-    # Change the version # if you would like to run the results multiple times.
-    # If you're just testing, then leave as version=1
-    results_version = 1 
+        # The code will check to see if a context_length, depth percent and version number have already been checked yet
+        # Change the version # if you would like to run the results multiple times.
+        # If you're just testing, then leave as version=1
+        results_version = 1,
+        context_aware_query=False,  # Added parameter for context-aware query
+        model_to_test = ChatOpenAI(
+            model='gpt-4-1106-preview', temperature=0, 
+            openai_api_key = os.getenv('OPENAI_API_KEY', 'YourAPIKey')),
+        enc = tiktoken.encoding_for_model("gpt-4-1106-preview"),
+        max_context_length = 128000,
+        num_context_lengths = 15,
+        num_depths = 15,
+        rate_limit = 120000
+): 
 
     # This will produce a list of context lengths for each experiment iteration
-    context_lengths = np.round(np.linspace(1000, 128000, num=15, endpoint=True)).astype(int)
-
+    context_lengths = np.round(np.linspace(1000, max_context_length,
+                                           num=num_context_lengths,
+                                           endpoint=True)).astype(int)
+    
     # This will product a list of document depths to place your random statement (needle) at.
     # Suggestion: Try out different distributions (like a sigmoid) to test non-evenly space intervals
-    document_depth_percents = np.round(np.linspace(0, 100, num=15, endpoint=True)).astype(int)
-
-    # The model we are testing. As of now it's set up for chat models with OpenAI
-    model_to_test = ChatOpenAI(model='gpt-4-1106-preview', temperature=0, openai_api_key = os.getenv('OPENAI_API_KEY', 'YourAPIKey'))
+    document_depth_percents = np.round(np.linspace(0, 100, num=num_depths, endpoint=True)).astype(int)
+    
+    results_file_name = path_from_code("results_%s.json" % results_version)
 
     # Run through each iteration of context_lengths and depths
     for context_length in context_lengths:
         for depth_percent in document_depth_percents:
             # Load results from file. 
             try:
-                with open('results.json', 'r') as f:
+                with open(results_file_name, 'r') as f:
                     results = json.load(f)
             except FileNotFoundError:
                 results = []
@@ -160,23 +172,38 @@ if __name__ == "__main__":
                 continue
 
             # Go generate the required length context and place your needle statement in
-            context = generate_context(needle, context_length, depth_percent)
+            context = generate_context(needle, context_length, depth_percent, enc)
 
             # Prepare your message to send to the model you're going to evaluate
-            messages = [
+            if context_aware_query:
+                messages = [
                 SystemMessage(
                     content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
                 ),
+                HumanMessage(
+                        content="What is the most fun thing to do in San Francisco based on the following context? Don't give information outside the document"
+                    ),
                 HumanMessage(
                     # This is the PG essays with your needle/random statement placed in it
                     # This is your haystack with a needle placed in it.
                     content=context
                 ),
                 HumanMessage(
-                    # This is the question you'll ask to the model to try and retrieve your random statement/needle.
-                    content="What is the most fun thing to do in San Francisco based on my context? Don't give information outside the document"
-                ),
+                        content="What is the most fun thing to do in San Francisco based on the preceding context? Don't give information outside the document"
+                    ),
             ]
+            else:
+                messages = [
+                    SystemMessage(
+                        content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
+                    ),
+                    HumanMessage(
+                        content=context
+                    ),
+                    HumanMessage(
+                        content="What is the most fun thing to do in San Francisco based on the preceding context? Don't give information outside the document"
+                    ),
+                ]
 
             # Go see if the model can answer the question to pull out your random fact
             response = model_to_test(messages)
@@ -201,11 +228,15 @@ if __name__ == "__main__":
             print (f"#{len(results)} Context: {context_length}, Depth: {depth_percent}, Score: {score}")
 
             # Save results to a JSON file each run
-            with open('results.json', 'w') as f:
+            with open(results_file_name, 'w') as f:
                 json.dump(results, f)
 
+            if rate_limit is not None:
             # Optional. Sleep for a bit to stay under the rate limit
             # Rate limit is 150K tokens/min so it's set at 120K for some cushion
-            sleep_time = (context_length / 120000)*60
-            print (f"Sleeping: {sleep_time}\n")
-            time.sleep(sleep_time)
+                sleep_time = (context_length / rate_limit)*60
+                print (f"Sleeping: {sleep_time}\n")
+                time.sleep(sleep_time)
+
+if __name__ == "__main__":
+    main()
