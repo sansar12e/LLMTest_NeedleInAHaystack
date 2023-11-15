@@ -12,6 +12,20 @@ import time
 
 load_dotenv()
 
+class ClaudeEnc:
+    
+    def __init__(self, llm):
+        self.llm = llm
+        
+    def encode(self, text):
+        return self.llm.client.get_tokenizer().encode(text).ids
+    
+    def decode(self, token_ids):
+        return self.llm.client.get_tokenizer().decode(token_ids)
+    
+def get_claude_enc(claude_llm):
+    return ClaudeEnc(claude_llm)
+
 def path_from_code(relpath):
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), relpath)
 
@@ -134,6 +148,7 @@ def main(
         # If you're just testing, then leave as version=1
         results_version = 1,
         context_aware_query=False,  # Added parameter for context-aware query
+        use_messages_context=False,  # Added parameter to choose context source; if False, inline context is used
         model_to_test = ChatOpenAI(
             model='gpt-4-1106-preview', temperature=0, 
             openai_api_key = os.getenv('OPENAI_API_KEY', 'YourAPIKey')),
@@ -175,7 +190,9 @@ def main(
             context = generate_context(needle, context_length, depth_percent, enc)
 
             # Prepare your message to send to the model you're going to evaluate
-            if context_aware_query:
+            if use_messages_context:
+                # Prepare context using messages
+                if context_aware_query:
                 messages = [
                 SystemMessage(
                     content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
@@ -192,7 +209,7 @@ def main(
                         content="What is the most fun thing to do in San Francisco based on the preceding context? Don't give information outside the document"
                     ),
             ]
-            else:
+                else:
                 messages = [
                     SystemMessage(
                         content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
@@ -204,6 +221,33 @@ def main(
                         content="What is the most fun thing to do in San Francisco based on the preceding context? Don't give information outside the document"
                     ),
                 ]
+            else:
+                #Prepare context using inline context
+                if context_aware_query:
+                messages = [
+                SystemMessage(
+                    content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
+                ),
+                HumanMessage(
+                    content=f"""<question>What is the most fun thing to do in San Francisco based on the following context? Don't give information outside the document.</question>
+                    %%%%%%{context}%%%%%%
+               <question>What is the most fun thing to do in San Francisco based on the preceding context? Don't give information outside the document.</question>"""
+                    ),
+            ]
+                else:
+                messages = [
+                    SystemMessage(
+                        content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
+                    ),
+                    HumanMessage(
+                    content=f"""
+                    {context}%%%%%%
+               <question>What is the most fun thing to do in San Francisco based on the preceding context? Don't give information outside the document.</question>"""
+                    ),
+            ]
+
+            # Go see if the model can answer the question to pull out your random fact
+            response = model_to_test(messages)
 
             # Go see if the model can answer the question to pull out your random fact
             response = model_to_test(messages)
