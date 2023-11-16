@@ -147,8 +147,8 @@ def main(
         # Change the version # if you would like to run the results multiple times.
         # If you're just testing, then leave as version=1
         results_version = 1,
-        context_aware_query=False,  # Added parameter for context-aware query
-        use_messages_context=False,  # Added parameter to choose context source; if False, inline context is used
+        context_aware_query=True,  # Added parameter for context-aware query
+        use_messages_context=True,  # Added parameter to choose context source; if False, inline context is used
         model_to_test = ChatOpenAI(
             model='gpt-4-1106-preview', temperature=0, 
             openai_api_key = os.getenv('OPENAI_API_KEY', 'YourAPIKey')),
@@ -245,9 +245,6 @@ def main(
                <question>What is the most fun thing to do in San Francisco based on the preceding context? Don't give information outside the document.</question>"""
                     ),
             ]
-
-            # Go see if the model can answer the question to pull out your random fact
-            response = model_to_test(messages)
 
             # Go see if the model can answer the question to pull out your random fact
             response = model_to_test(messages)
