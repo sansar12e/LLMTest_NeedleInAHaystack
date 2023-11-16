@@ -193,7 +193,7 @@ def main(
             if use_messages_context:
                 # Prepare context using messages
                 if context_aware_query:
-                messages = [
+                    messages = [
                 SystemMessage(
                     content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
                 ),
@@ -210,7 +210,7 @@ def main(
                     ),
             ]
                 else:
-                messages = [
+                    messages = [
                     SystemMessage(
                         content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
                     ),
@@ -224,7 +224,7 @@ def main(
             else:
                 #Prepare context using inline context
                 if context_aware_query:
-                messages = [
+                    messages = [
                 SystemMessage(
                     content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
                 ),
@@ -235,7 +235,7 @@ def main(
                     ),
             ]
                 else:
-                messages = [
+                    messages = [
                     SystemMessage(
                         content="You are a helpful AI bot that answers questions for a user. Keep your response short and direct"
                     ),
